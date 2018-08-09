@@ -38,32 +38,20 @@ class SesEmailPayload (object):
         s3 = boto3.client('s3') #Linking boto3 to Amazon S3 buckets
         s3.download_fileobj( self.bucket, message_id, self.output ) #get the email content using the key
         self.msg = email.message_from_string( self.output.getvalue().decode( 'utf-8' ) ) #decode the content
-        counter = 0 #starts counter to keep track of number of parts of the email 
         for part in self.msg.walk(): #loop to check over the email and keep track of the number of parts
-            print( "-" * 200 )
-            #print( dir( part ) )
-            print( 'content filename ' + str(part.get_filename()))
-            print( 'content encoding ' + str(part['Content-Transfer-Encoding']) )
-            print( "content disp "+ str( part.get_content_disposition() ) ) #prints mime type of each part
-            print( "content subtype "+ str( part.get_content_subtype() ) ) #prints mime type of each part
-            print( "content type "+ part.get_content_type() ) #prints mime type of each part
-            print( "content payload "+ str(part.get_payload() )) #prints the content of each part as a string
-            print( "-" * 200 )
-            counter += 1 #adds to counter
             self.append_part( part.get_content_type(), part.get_payload(),  part['Content-Transfer-Encoding'], part.get_filename() )
-        print( "message parts = {}".format( counter ) )#prints the total number of parts
-        print(self.parts)
         if isinstance (message_id, dict):
             self._message_id = message_id
             return
         #raise Exception ()
-
+        
     @property
     def parts( self ):
         return self._parts
 
     def append_part( self, mime_type, content, encoding, filename ):
-        self._parts.append( OurAttachment( mime_type, content, encoding, filename ) )
+        if encoding:
+            self._parts.append( OurAttachment( mime_type, content, encoding, filename ) )
 
 class OurAttachment( object ):
 
@@ -72,8 +60,6 @@ class OurAttachment( object ):
         self.content = content
         self.encoding = encoding
         self.filename = filename
-        
-
         if not self.encoding:
             return
         
@@ -88,21 +74,17 @@ class OurAttachment( object ):
             function( content, mime_type )
         else:
             print( "no function to deal with encoding type {}".format( self.encoding ) )
-        
 
     @property
     def mime_type( self ):
         return self._mime_type
 
-
     def process_content_base64( self, content, mime_type ):
-        print( 'called base64 encoding' )
         self.content = base64.b64decode(self.content)
         
     
     def process_content_quoted_printable( self, content, mime_type ):
-        print( 'called QP encoding' )
-        return
+        self.content = bytes(content.encode('utf-8'))
         
     
 #defining class to hold the raw data when email comes through
@@ -110,6 +92,7 @@ class SesLambdaPayload (object):
 
     def __init__ (self, payload=None):
         self._payload = None
+
         if payload:
             self.payload = payload
 
@@ -179,15 +162,10 @@ class SlackInfo (object):
             icon_emoji = ':email:',
             as_user = False
         )
-        print('message response = ', response)
         self._ts = response['ts']
 
     def upload_file (self, title, att ):
-        
-        print(att.filename)
         temp_file =  BytesIO( att.content )
-        print(temp_file)
-        
         response = sc.api_call(
             'files.upload',
             filename = att.filename,
@@ -197,8 +175,12 @@ class SlackInfo (object):
             as_user = False,
             thread_ts = self._ts,
         )
-        
-        print('attach response = ', response)
+
+   # def upload_html_s3 (self, att, bucket_name, key):
+    #    s3 = boto.client('s3')
+     #   s3.upload_file(att.content, bucket_name, key)
+
+
         
 @app.route('/')
 def hello_world():
@@ -213,13 +195,17 @@ def haproxy_keep_alive_check():
 @app.route('/slack', methods=['POST'])
 def receive_payload() :
     ses = SesLambdaPayload( request.data ) #takes the incoming email and stores in the our class
-    print(ses.message_id)
     #virus/spam check to see if incoming email is safe to process
     email_body = SesEmailPayload( bucket='ses.sqs.content') #takes our payload class and sets it to a new class for content process
     email_body.message_id = ses.message_id #sets the message ID value of the new class
     slack = SlackInfo(channel='#forkredit')
     slack.send( "You received an emal about *{}* from '{}' to '{}'".format( ses.subject, ses.sender, ses.recipient) )
     for attachment in email_body.parts:
+        #if attachment.mime_type == 'text/html':
+        #id = generated_id
+        #slack.upload_html_s3(attachment,'ses.sqs.htmlcontent', id + '.html' )
+        #slack.send('Link to HTML content: {}'.format(.....))
+        
         slack.upload_file('title', attachment ) 
     return'OK'
 
@@ -265,7 +251,7 @@ if __name__ == '__main__':
                                               'value': 'AAOMgpfDNcgKWHai/V7VF6AWU3vIVGRhjOVzbcNSb1j6xJSsET5wVzSXn8RmRZQjQ2wt+Y6YDg3vrQ=='},
                                           {   'name': 'X-Received',
                                               'value': 'by 2002:a50:b56e:: with SMTP id z43-v6mr8214470edd.223.1533311969648; Fri, 03 Aug 2018 08:59:29 -0700 (PDT)'},
-                                          {   'name': 'Return-Path',
+                                           {   'name': 'Return-Path',
                                               'value': '<charlie.tatham@dojono.com>'},
                                           {   'name': 'Received',
                                               'value': 'from ?IPv6:::ffff:172.16.1.53? ([185.53.225.2]) by smtp.gmail.com with ESMTPSA id p3-v6sm2192261edp.47.2018.08.03.08.59.28 for <info@forkredit.com> (version=TLS1_2 cipher=ECDHE-RSA-AES128-GCM-SHA256 bits=128/128); Fri, 03 Aug 2018 08:59:28 -0700 (PDT)'},
@@ -302,7 +288,7 @@ if __name__ == '__main__':
                               'spfVerdict': {   'status': 'PASS'},
                               'timestamp': '2018-08-03T15:59:30.404Z',
                               'virusVerdict': {   'status': 'PASS'}}}}
-
+    
     #stores 'imcoming' email as class
     ses = SesLambdaPayload()
     ses.payload = bytes( json.dumps( a ).encode( 'utf-8' ) ) #encodes the data
