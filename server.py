@@ -96,7 +96,7 @@ class OurAttachment( object ):
         key = '{}.html'.format(uuid.uuid4())
         temp_file =  BytesIO( bytes(self.content.encode('utf-8') ))
         s3 = boto3.client('s3')
-        s3.upload_fileobj(temp_file, bucket, key)
+        s3.upload_fileobj(temp_file, bucket, key, ExtraArgs={'ContentType': "text/html"} )
         url = 'http://{}.s3-website-eu-west-1.amazonaws.com/{}'.format(bucket, key)
         return url
     
@@ -154,7 +154,8 @@ class SlackInfo (object):
 
     def __init__ (self, channel):
         self._channel = channel
-        self._ts = None                                    
+        self._ts = None
+        
     @property
     def text(self):
         return self._text
@@ -183,6 +184,7 @@ class SlackInfo (object):
         if not self.ts:
             self._ts = response['ts']
 
+    #Method to upload attachment files 
     def upload_file (self, title, att ):
         temp_file =  BytesIO( att.content )
         response = sc.api_call(
