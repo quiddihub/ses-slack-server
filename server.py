@@ -154,7 +154,7 @@ class SlackInfo (object):
 
     def __init__ (self, channel):
         self._channel = channel
-                                            
+        self._ts = None                                    
     @property
     def text(self):
         return self._text
@@ -163,6 +163,10 @@ class SlackInfo (object):
     def channel(self):
         return self._channel
 
+    @property
+    def ts(self):
+        return self._ts
+    
     @channel.setter
     def channel (self, channel) :
         self._channel = channel
@@ -173,9 +177,11 @@ class SlackInfo (object):
             channel = self.channel,
             text = message,
             icon_emoji = ':email:',
-            as_user = False
+            as_user = False,
+            thread_ts = self.ts
         )
-        self._ts = response['ts']
+        if not self.ts:
+            self._ts = response['ts']
 
     def upload_file (self, title, att ):
         temp_file =  BytesIO( att.content )
@@ -188,7 +194,6 @@ class SlackInfo (object):
             as_user = False,
             thread_ts = self._ts,
         )
-
         
 @app.route('/')
 def hello_world():
