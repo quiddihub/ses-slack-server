@@ -1,4 +1,5 @@
 #importing external files
+import uuid
 import sys
 import os
 from flask import request
@@ -21,8 +22,8 @@ app = Flask(__name__)
 #declaring a class to get the content of the email
 class SesEmailPayload (object):
     #giving the class properties to set and call on
-    def __init__ (self, bucket):
-        self.bucket = bucket
+    def __init__ (self, download_bucket):
+        self.download_bucket = download_bucket
         self.output = BytesIO()
         self.msg = None
         self._parts = []
@@ -36,9 +37,10 @@ class SesEmailPayload (object):
     @message_id.setter
     def message_id (self, message_id):
         s3 = boto3.client('s3') #Linking boto3 to Amazon S3 buckets
-        s3.download_fileobj( self.bucket, message_id, self.output ) #get the email content using the key
+        s3.download_fileobj( self.download_bucket, message_id, self.output ) #get the email content using the key
         self.msg = email.message_from_string( self.output.getvalue().decode( 'utf-8' ) ) #decode the content
         for part in self.msg.walk(): #loop to check over the email and keep track of the number of parts
+            
             self.append_part( part.get_content_type(), part.get_payload(),  part['Content-Transfer-Encoding'], part.get_filename() )
         if isinstance (message_id, dict):
             self._message_id = message_id
@@ -52,7 +54,7 @@ class SesEmailPayload (object):
     def append_part( self, mime_type, content, encoding, filename ):
         if encoding:
             self._parts.append( OurAttachment( mime_type, content, encoding, filename ) )
-
+            
 class OurAttachment( object ):
 
     def __init__( self, mime_type, content, encoding, filename ):
@@ -84,8 +86,19 @@ class OurAttachment( object ):
         
     
     def process_content_quoted_printable( self, content, mime_type ):
-        self.content = bytes(content.encode('utf-8'))
+        if self.mime_type == 'text/plain':
+            self.content = bytes(content.encode('utf-8'))
+            return
+        url = self.upload_html_s3('ses.sqs.htmlcontent', self.content)
+        self.content = url        
         
+    def upload_html_s3 (self, bucket, content):
+        key = '{}.html'.format(uuid.uuid4())
+        temp_file =  BytesIO( bytes(self.content.encode('utf-8') ))
+        s3 = boto3.client('s3')
+        s3.upload_fileobj(temp_file, bucket, key)
+        url = 'http://{}.s3-website-eu-west-1.amazonaws.com/{}'.format(bucket, key)
+        return url
     
 #defining class to hold the raw data when email comes through
 class SesLambdaPayload (object):
@@ -176,11 +189,6 @@ class SlackInfo (object):
             thread_ts = self._ts,
         )
 
-   # def upload_html_s3 (self, att, bucket_name, key):
-    #    s3 = boto.client('s3')
-     #   s3.upload_file(att.content, bucket_name, key)
-
-
         
 @app.route('/')
 def hello_world():
@@ -196,17 +204,15 @@ def haproxy_keep_alive_check():
 def receive_payload() :
     ses = SesLambdaPayload( request.data ) #takes the incoming email and stores in the our class
     #virus/spam check to see if incoming email is safe to process
-    email_body = SesEmailPayload( bucket='ses.sqs.content') #takes our payload class and sets it to a new class for content process
+    email_body = SesEmailPayload('ses.sqs.content') #takes our payload class and sets it to a new class for content process
     email_body.message_id = ses.message_id #sets the message ID value of the new class
     slack = SlackInfo(channel='#forkredit')
     slack.send( "You received an emal about *{}* from '{}' to '{}'".format( ses.subject, ses.sender, ses.recipient) )
     for attachment in email_body.parts:
-        #if attachment.mime_type == 'text/html':
-        #id = generated_id
-        #slack.upload_html_s3(attachment,'ses.sqs.htmlcontent', id + '.html' )
-        #slack.send('Link to HTML content: {}'.format(.....))
-        
-        slack.upload_file('title', attachment ) 
+        if attachment.mime_type == 'text/html':
+            slack.send('HTML content link: {}'.format(attachment.content))
+        else:
+            slack.upload_file('title', attachment ) 
     return'OK'
 
 if __name__ == '__main__':
