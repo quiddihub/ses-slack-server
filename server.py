@@ -40,7 +40,6 @@ class SesEmailPayload (object):
         s3.download_fileobj( self.download_bucket, message_id, self.output ) #get the email content using the key
         self.msg = email.message_from_string( self.output.getvalue().decode( 'utf-8' ) ) #decode the content
         for part in self.msg.walk(): #loop to check over the email and keep track of the number of parts
-            
             self.append_part( part.get_content_type(), part.get_payload(),  part['Content-Transfer-Encoding'], part.get_filename() )
         if isinstance (message_id, dict):
             self._message_id = message_id
@@ -50,7 +49,7 @@ class SesEmailPayload (object):
     @property
     def parts( self ):
         return self._parts
-
+    
     def append_part( self, mime_type, content, encoding, filename ):
         if encoding:
             self._parts.append( OurAttachment( mime_type, content, encoding, filename ) )
