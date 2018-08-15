@@ -14,7 +14,9 @@ import quopri
 import types
 import logging
 import logging.handlers
+import local_settings
 
+config = local_settings.env
 slack_token = os.environ['SLACK_API_BOT_TOKEN']
 sc = SlackClient(slack_token)
 logging.getLogger('boto3').setLevel(logging.WARNING)
@@ -82,7 +84,7 @@ class SesLambdaPayload (object):
          return self.payload['ses']['mail']['messageId']
 
     @property
-    def channel(self) :
+    def channel(self):
         destination = self.recipient.split('@')[1]
         channel = destination.split('.')[0].lower().replace('-', '_')
         return channel
@@ -186,11 +188,19 @@ class OurAttachment( object ):
 #defining our slack properties and the functions that will send the info to slack
 class SlackInfo (object):
 
-    def __init__ (self, channel, logger = PseudoLogger()):
+    def __init__ (self, channel, default_channel, logger = PseudoLogger()):
         self._channel = channel
         self._ts = None
         self.log = logger
-        
+        channels_list = sc.api_call('channels.list'):
+        if channels_list.get('ok'):
+            found = False
+            for c in channels_list.get('channels'):
+                if c.get( 'normalised_name' ) = self.channel:
+                    found = True
+                    break
+            if not found:
+                self.channel = default_channel
     @property
     def text(self):
         return self._text
