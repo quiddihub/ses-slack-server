@@ -1,13 +1,48 @@
 #importing external files
 import sys
+import logging
+import logging.handlers
 import os
 from flask import request
 from flask import Flask
 from slackclient import SlackClient
-from classes import *
+import celery
+import celery.result
+import local_settings
+from kombu import Queue, Exchange
 
+config = local_settings.env
 app = Flask(__name__)
-        
+__log_format = logging.Formatter(
+    "%(name)s %(funcName)-20s:%(lineno)-4d %(relativeCreated)-8d %(levelname)s - %(message)s"
+)
+
+# Create the Celery component
+celery = celery.Celery(
+    config.get( 'APPLICATION_NAME' ),
+    broker = config.get( 'CELERY_BROKER' ),
+    backend = config.get( 'CELERY_BACKEND' ),
+)
+
+#Set the default celery queue
+celery.conf.update(
+    CELERY_DEFAULT_QUEUE = config.get('CELERY_DEFAULT_QUEUE'),
+    CELERY_TASK_RESULT_EXPIRES = config.get('CELERY_TASK_RESULT_EXPIRES'),
+    CELERY_MAX_CACHED_RESULTS = -1,
+    CELERY_QUEUES = (
+        Queue(
+            config.get('CELERY_DEFAULT_QUEUE'),
+            Exchange(config.get('CELERY_DEFAULT_QUEUE')),
+            routing_key=config.get('CELERY_DEFAULT_QUEUE')),
+    )
+)
+
+def add_logger_component( handler ):
+    handler.setFormatter( __log_format )
+    handler.setLevel( logging.DEBUG )
+    app.logger.addHandler( handler )
+
+
 @app.route('/')
 def hello_world():
     return 'Hello, World!'
@@ -20,15 +55,21 @@ def haproxy_keep_alive_check():
 #funtion to receive the payload when an email comes in
 @app.route('/slack', methods=['POST'])
 def receive_payload() :
-    ses = SesLambdaPayload( request.data ) #takes the incoming email and stores in the our class
-    email_body = SesEmailPayload('ses.sqs.content') #takes our payload class and sets it to a new class for content process
-    email_body.message_id = ses.message_id #sets the message ID value of the new class
-    slack = SlackInfo(channel='#forkredit') #sets the slack channel our bot will post too
-    slack.send( "You received an emal about *{}* from '{}' to '{}'".format( ses.subject, ses.sender, ses.recipient) ) #formats the message to be sent
-    for attachment in email_body.parts: #filters attachments to upload images and post links to html content
-        if attachment.mime_type == 'text/html':
-            slack.send('HTML content link: {}'.format(attachment.content))
-        else:
-            slack.upload_file('title', attachment ) 
+    expires_at = 1200
+    app.logger.debug('About to send payload to celery task')
+    resp = celery.send_task( 'tasks.slack.process_email', (), {'data':request.data.decode('utf-8')}, expires=expires_at )
+    app.logger.debug('Celery task id: {}'.format(resp.id))
     return'OK'
+    
+
+
+if __name__ == '__main__':
+    # create logging component, streaming to screen and syslog
+
+    log = logging.getLogger( app.logger.name )
+    log.setLevel( logging.DEBUG )
+    add_logger_component( logging.handlers.SysLogHandler( address='/dev/log', facility=logging.handlers.SysLogHandler.LOG_USER ) )
+    add_logger_component( logging.StreamHandler( ) )
+    app.logger.info('server started')
+    app.run( host=config['LISTEN_HOST'], port=config['LISTEN_PORT'] )
     
