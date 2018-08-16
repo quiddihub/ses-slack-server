@@ -15,6 +15,7 @@ import types
 import logging
 import logging.handlers
 import local_settings
+import pprint
 
 config = local_settings.env
 slack_token = os.environ['SLACK_API_BOT_TOKEN']
@@ -189,18 +190,21 @@ class OurAttachment( object ):
 class SlackInfo (object):
 
     def __init__ (self, channel, default_channel, logger = PseudoLogger()):
-        self._channel = channel
+        self._channel = '#{}'.format(channel)
         self._ts = None
         self.log = logger
-        channels_list = sc.api_call('channels.list'):
+        channels_list = sc.api_call('conversations.list', types = 'private_channel')
+        self.log.info('Attempting to find slack channel: {}'.format(channel))
         if channels_list.get('ok'):
             found = False
             for c in channels_list.get('channels'):
-                if c.get( 'normalised_name' ) = self.channel:
+                if c.get( 'name_normalized' ) == channel:
                     found = True
                     break
             if not found:
-                self.channel = default_channel
+                self.channel = '#{}'.format(default_channel)
+                self.log.info('Channel: {} not found, Set channel to default: {}'.format(channel, default_channel))
+        
     @property
     def text(self):
         return self._text
@@ -228,6 +232,7 @@ class SlackInfo (object):
             thread_ts = self.ts
         )
         if not self.ts:
+            self.log.info( pprint.pformat( response ) )
             self._ts = response['ts']
         self.log.info('Content successsfully processed and a message has been sent to the slack channel: {}'.format(self.channel))
             
