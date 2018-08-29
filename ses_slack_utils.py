@@ -113,6 +113,7 @@ class SesEmailPayload (object):
         s3.download_fileobj( self.download_bucket, message_id, self.output ) #get the email content using the key
         self.log.info('Payload content accquired from S3 bucket, now attempting to decode contents and any attachments')
         self.msg = email.message_from_string( self.output.getvalue().decode( 'utf-8' ) ) #decode the content
+        self.log.info('Charset: {}'.format(self.msg.get_charsets()))
         for part in self.msg.walk(): #loop to check over the email and keep track of the number of parts
             #once a part is found, it is processed, decoded and returned to our array
             self.append_part( part.get_content_type(), part.get_payload(),  part['Content-Transfer-Encoding'], part.get_filename())
@@ -120,7 +121,8 @@ class SesEmailPayload (object):
         if isinstance (message_id, dict):
             self._message_id = message_id
             return
-                                                                                                     
+
+
     @property
     def parts( self ):
         return self._parts
@@ -128,16 +130,18 @@ class SesEmailPayload (object):
     def append_part( self, mime_type, content, encoding, filename ):
         if encoding:
             self._parts.append( OurAttachment( mime_type, content, encoding, filename, logger = log ) )
-                 
-#defining the class which all of our content/attachments will be                                             
+            
+#defining the class which all of our content/attachments will be
 class OurAttachment( object ):
-    
+                
     def __init__( self, mime_type, content, encoding, filename, logger = PseudoLogger() ):
         self._mime_type = mime_type
         self.content = content
         self.encoding = encoding
         self.filename = filename
         self.log = logger
+        self.missing_parser = False
+        
         if not self.encoding:
             return
         #logic to determine what encoding is being used for each attachment and use the corresponding function
@@ -149,42 +153,59 @@ class OurAttachment( object ):
             self.log.error( e )
             
         if function:
-            function( content, mime_type )
+            function( content)
         else:
             self.log.warn( "no function to deal with encoding type {}".format( self.encoding ) )
-                        
+            self.missing_parser = True #setting this to true will cause celery to send a message to slack saying that we are missing a function
+            return
+        
+        if self.mime_type == 'text/plain': #gets any text/plain content, decodes it and returns it to the array
+            
+            self.content = bytes(content.encode('utf-8'))
+            self.log.info('Part with text/plain mime type found, returning to parts array')
+            return
+        elif self.mime_type == 'text/html': #gets any text/html content, decodes it, uploads it to s3 and returns the link
+            self.log.info('HTML content found, attempting to upload to S3 bucket: ses.sqs.htmlcontent')
+            url = self.upload_html_s3('ses.sqs.htmlcontent', self.content)
+            self.log.info('HTML content uploaded to S3 bucket successfully, returning link to parts array. Link: {}'.format(url))
+            self.content = url
+        
+
+
+
     @property
-    def mime_type( self ):
+    def mime_type (self):
         return self._mime_type
-    
+
     #decodes anything with base64 encoding
-    def process_content_base64( self, content, mime_type ):
+    def process_content_base64( self, content ):
         self.log.info('Part with base64 encoding found, attemptiing to decode.')
         self.content = base64.b64decode(self.content)
         self.log.info('Base64 part decoded, returning to parts array')
         
     #decodes anything which has QP encoding and if its html, uses the function below to upload it to S3 and return the link to the upload
-    def process_content_quoted_printable( self, content, mime_type ):
+    def process_content_quoted_printable( self, content):
         self.log.info('Part with QP encoding found, attempting to decode')
         self.content = quopri.decodestring(content)
-        self.log.info('QP part decoded')
-        if self.mime_type == 'text/plain':
-            self.content = bytes(content.encode('utf-8'))
-            self.log.info('Part with text/plain mime type found, returning to parts array')
-            return
-        self.log.info('HTML content found, attempting to upload to S3 bucket: ses.sqs.htmlcontent')
-        url = self.upload_html_s3('ses.sqs.htmlcontent', self.content)
-        self.log.info('HTML content uploaded to S3 bucket successfully, returning link to parts array. Link: {}'.format(url))
-        self.content = url
+        self.log.info('QP part decoded, returning to parts array')
+
+    #returns anything with 7bit encoding back to the parts array as no decoding is necessary
+    def process_content_7bit(self, content):
+        self.log.info('Part with 7bit encoding found, returning to parts array')
+
+    #returns anything with 8bit encoding back to the parts array as no decoding is necessary
+    def process_content_8bit(self, content):
+        self.log.info('Part with 8bit encoding found, returning to parts array')
         
+
     #function to upload html content to an S3 bucket
     def upload_html_s3 (self, bucket, content):
-        key = '{}.html'.format(uuid.uuid4())
-        temp_file =  BytesIO( bytes(self.content ))
+        key = '{}.html'.format(uuid.uuid4()) #generates a randomid to identify the html content
+        temp_file =  BytesIO( bytes(self.content )) #converts the content to a bytes object
         s3 = boto3.client('s3')
         s3.upload_fileobj(temp_file, bucket, key, ExtraArgs={'ContentType': "text/html"} ) #make sure to set content type  to text/html or it will download
         url = 'http://{}.s3-website-eu-west-1.amazonaws.com/{}'.format(bucket, key)
-        return url
+        return url #returns the link to the html content in the s3 bucket
 
 #defining our slack properties and the functions that will send the info to slack
 class SlackInfo (object):
@@ -193,16 +214,16 @@ class SlackInfo (object):
         self._channel = '#{}'.format(channel)
         self._ts = None
         self.log = logger
-        channels_list = sc.api_call('conversations.list', types = 'private_channel')
+        channels_list = sc.api_call('conversations.list', types = 'private_channel') #grabs a list of all the private channels that our slack app is part of
         self.log.info('Attempting to find slack channel: {}'.format(channel))
-        if channels_list.get('ok'):
+        if channels_list.get('ok'): 
             found = False
             for c in channels_list.get('channels'):
                 if c.get( 'name_normalized' ) == channel:
-                    found = True
+                    found = True #checks to see if our domain matches a slack channel and then sets the channel to send
                     break
             if not found:
-                self.channel = '#{}'.format(default_channel)
+                self.channel = '#{}'.format(default_channel) #if the channel is not found, its sets the channeel to our default
                 self.log.info('Channel: {} not found, Set channel to default: {}'.format(channel, default_channel))
         
     @property
