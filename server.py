@@ -58,6 +58,7 @@ def receive_payload() :
     expires_at = 1200
     app.logger.debug('About to send payload to celery task')
     resp = celery.send_task( 'tasks.slack.process_email', (), {'data':request.data.decode('utf-8')}, expires=expires_at )
+    add_logger_component( logging.StreamHandler( ) )
     app.logger.debug('Celery task id: {}'.format(resp.id))
     return'OK'
     

@@ -58,11 +58,11 @@ class SesLambdaPayload (object):
     #properties to get important data values like subject, sender and virus checks
     @property
     def spam_verdict(self):
-        return self.payload['ses']['receipt']['spamVerdict']
+        return self.payload['ses']['receipt']['spamVerdict']['status']
     
     @property
     def virus_verdict(self):
-        return self.payload['ses']['receipt']['virusVerdict']
+        return self.payload['ses']['receipt']['virusVerdict']['status']
     
     @property
     def spf_verdict(self):
@@ -197,7 +197,9 @@ class OurAttachment( object ):
     def process_content_8bit(self, content):
         self.log.info('Part with 8bit encoding found, returning to parts array')
         
-
+    def process_content_binary(self,content):
+        self.content = content.decode('utf-8')
+        
     #function to upload html content to an S3 bucket
     def upload_html_s3 (self, bucket, content):
         key = '{}.html'.format(uuid.uuid4()) #generates a randomid to identify the html content
@@ -210,10 +212,17 @@ class OurAttachment( object ):
 #defining our slack properties and the functions that will send the info to slack
 class SlackInfo (object):
 
-    def __init__ (self, channel, default_channel, logger = PseudoLogger()):
+    def __init__ (self, channel, default_channel, spam_verdict, virus_verdict, logger = PseudoLogger()):
         self._channel = '#{}'.format(channel)
         self._ts = None
         self.log = logger
+        if virus_verdict == 'FAIL':
+            self._emoji = ':sos:'
+        elif spam_verdict == 'FAIL':
+            self._emoji = ':warning:'
+        else:
+            self._emoji = ':email:'
+        
         channels_list = sc.api_call('conversations.list', types = 'private_channel') #grabs a list of all the private channels that our slack app is part of
         self.log.info('Attempting to find slack channel: {}'.format(channel))
         if channels_list.get('ok'): 
@@ -225,7 +234,11 @@ class SlackInfo (object):
             if not found:
                 self.channel = '#{}'.format(default_channel) #if the channel is not found, its sets the channeel to our default
                 self.log.info('Channel: {} not found, Set channel to default: {}'.format(channel, default_channel))
-        
+
+    @property
+    def emoji(self):
+        return self._emoji
+
     @property
     def text(self):
         return self._text
@@ -242,13 +255,16 @@ class SlackInfo (object):
     def channel (self, channel) :
         self._channel = channel
 
+
+    
+        
     #method to send the email info and the html link to slack
     def send( self, message ):
         response = sc.api_call(
             "chat.postMessage",
             channel = self.channel,
             text = message,
-            icon_emoji = ':email:',
+            icon_emoji = self.emoji,
             as_user = False,
             thread_ts = self.ts
         )
