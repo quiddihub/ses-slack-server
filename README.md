@@ -1,2 +1,2 @@
-# ses-slack-server
+# SES-Slack-Server
 AWS SES to Slack integration
