@@ -11,5 +11,5 @@ env = {
     'CELERY_BACKEND': 'redis://localhost:6379/3',
     'CELERY_TASK_RESULT_EXPIRES': 1440,
     'CELERY_DEFAULT_QUEUE': 'slack_requests',
-    'DEFAULT_SLACK_CHANNEL': 'systemoperations',
+    'DEFAULT_SLACK_CHANNEL': 'email',
 }

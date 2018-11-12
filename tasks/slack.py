@@ -17,9 +17,9 @@ def process_email( **kwargs ):
     email_body = SesEmailPayload('ses.sqs.content', logger = log) #takes our payload class and sets it to a new class for content process
     email_body.message_id = ses.message_id #sets the message ID value of the new class
     if ses.spam_verdict == 'PASS' and ses.virus_verdict == 'PASS':
-        slack = SlackInfo(channel=ses.channel, default_channel=config['DEFAULT_SLACK_CHANNEL'], spam_verdict = ses.spam_verdict, virus_verdict = ses.virus_verdict, logger = log)#sets the slack channel our bot will post too
+        slack = SlackInfo(channel = config['DEFAULT_SLACK_CHANNEL'], spam_verdict = ses.spam_verdict, virus_verdict = ses.virus_verdict, logger = log)#sets the slack channel our bot will post too
     else:
-        slack = SlackInfo(channel = 'email_spam', default_channel = config['DEFAULT_SLACK_CHANNEL'], spam_verdict = ses.spam_verdict, virus_verdict = ses.virus_verdict, logger = log)
+        slack = SlackInfo(channel = 'email_spam', spam_verdict = ses.spam_verdict, virus_verdict = ses.virus_verdict, logger = log)
     slack.send( "You received an email about *{}* from '{}' to '{}'".format( ses.subject, ses.sender, ses.recipient) ) #formats the message to be sent
     for attachment in email_body.parts: #filters attachments to upload images and post links to html content
         if attachment.missing_parser:

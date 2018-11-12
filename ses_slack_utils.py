@@ -84,11 +84,11 @@ class SesLambdaPayload (object):
     def message_id(self):
          return self.payload['ses']['mail']['messageId']
 
-    @property
-    def channel(self):
-        destination = self.recipient.split('@')[1]
-        channel = destination.split('.')[0].lower().replace('-', '_')
-        return channel
+#    @property
+#    def channel(self):
+#        destination = self.recipient.split('@')[1]
+#        channel = destination.split('.')[0].lower().replace('-', '_')
+#        return channel
      
 #declaring a class to get the content of the email
 class SesEmailPayload (object):
@@ -212,7 +212,7 @@ class OurAttachment( object ):
 #defining our slack properties and the functions that will send the info to slack
 class SlackInfo (object):
 
-    def __init__ (self, channel, default_channel, spam_verdict, virus_verdict, logger = PseudoLogger()):
+    def __init__ (self, channel, spam_verdict, virus_verdict, logger = PseudoLogger()):
         self._channel = '#{}'.format(channel)
         self._ts = None
         self.log = logger
@@ -223,17 +223,17 @@ class SlackInfo (object):
         else:
             self._emoji = ':email:'
         
-        channels_list = sc.api_call('conversations.list', types = 'private_channel') #grabs a list of all the private channels that our slack app is part of
-        self.log.info('Attempting to find slack channel: {}'.format(channel))
-        if channels_list.get('ok'): 
-            found = False
-            for c in channels_list.get('channels'):
-                if c.get( 'name_normalized' ) == channel:
-                    found = True #checks to see if our domain matches a slack channel and then sets the channel to send
-                    break
-            if not found:
-                self.channel = '#{}'.format(default_channel) #if the channel is not found, its sets the channeel to our default
-                self.log.info('Channel: {} not found, Set channel to default: {}'.format(channel, default_channel))
+#        channels_list = sc.api_call('conversations.list', types = 'private_channel') #grabs a list of all the private channels that our slack app is part of
+#        self.log.info('Attempting to find slack channel: {}'.format(channel))
+#        if channels_list.get('ok'): 
+#            found = False
+#            for c in channels_list.get('channels'):
+#                if c.get( 'name_normalized' ) == channel:
+#                    found = True #checks to see if our domain matches a slack channel and then sets the channel to send
+#                    break
+#            if not found:
+#                self.channel = '#{}'.format(default_channel) #if the channel is not found, its sets the channeel to our default
+#                self.log.info('Channel: {} not found, Set channel to default: {}'.format(channel, default_channel))
 
     @property
     def emoji(self):
