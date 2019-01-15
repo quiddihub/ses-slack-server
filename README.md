@@ -23,13 +23,21 @@ aws lambda create-function \
 --role ROLE-ARN (found under IAM/roles in the aws console)\
 ```
 
-8. Clone the `ses-slack-server` repo 
+9. Clone the `ses-slack-server` repo 
 
-9. Fill in `local_settings.py` with the following:
+10. Fill in `local_settings.py` with the following:
   * SPAM_SLACK_CHANNEL = the name of the slack channel any emails that do not pass the spam/virus verdict will be sent to
   * DEFAULT_SLACK_CHANNEL = the name of the slack channel any emails that do pass the spam/virus verdict will be sent to
   * SLACK_TOKEN = the slack api token for the slack app that will be posting the emails
   * EMAIL_S3_BUCKET = the name of the bucket where you want to store the emails
   * HTML_S3_BUCKET = the name of the bucket where yoou want to store the html content of the emails
+  * LAMBDA_FUNCTION_NAME = the name you gave to the lambda function when you created it
+  (Note: bucket names are shared across all users so using a unique identfier is ideal (eg. name, company, etc.))
   
-10. 
+12. Create a new hosted zone for this domain on AWS route53 and add any DNS records you need
+
+12. Change the domain nameservers on the registrar to point to the AWS nameservers on the route53 hosted zone
+
+13. Run `python3 ses.py $DOMAIN_NAME` which will verify your domain and create a rule on ses for it and create the s3 buckets
+
+14. 
