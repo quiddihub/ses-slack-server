@@ -19,7 +19,7 @@ aws lambda create-function \
 --region YOUR REGION (example: eu-west-1)\
 --zip-file fileb://PATH/FILENAME.zip \
 --runtime python3.6 \
---handler NAME-OF-FUNCTION-HANDLER (example: ses_lambda_slack.email_handler)\
+--handler ses_lambda_slack.email_handler \
 --role ROLE-ARN (found under IAM/roles in the aws console)\
 ```
 
