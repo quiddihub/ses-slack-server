@@ -40,4 +40,4 @@ aws lambda create-function \
 
 13. Run `python3 ses.py $DOMAIN_NAME` which will verify your domain and create a rule on ses for it and create the s3 buckets
 
-14. 
+14. Start up flask app and celery workers  
